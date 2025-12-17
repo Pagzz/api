@@ -1,8 +1,6 @@
 import { createClient } from "@base44/sdk";
 
-/**
- * Datapacks we care about
- */
+// Datapacks you want to process
 const SELECTED_DATAPACKS = [
   "RoofCondition",
   "Measurements",
@@ -16,12 +14,12 @@ const SELECTED_DATAPACKS = [
 ];
 
 export default async function handler(req, res) {
-  // Health check (GET / HEAD)
-  if (req.method !== "POST") {
-    return res.status(200).json({ status: "ok" });
-  }
-
   try {
+    // Health check for GET
+    if (req.method !== "POST") {
+      return res.status(200).json({ status: "ok" });
+    }
+
     const body = req.body;
 
     if (!body || !Array.isArray(body.products)) {
@@ -31,40 +29,42 @@ export default async function handler(req, res) {
     const { requestId, products } = body;
 
     // Filter only datapacks we want
-    const filtered = products.filter(p =>
-      SELECTED_DATAPACKS.includes(p.type)
-    );
+    const filtered = products.filter(p => SELECTED_DATAPACKS.includes(p.type));
 
-    // Init Base44 client
+    // Initialize Base44 client
     const base44 = createClient({
       apiKey: process.env.BASE44_API_KEY
     });
 
-    let processed = 0;
+    let processedCount = 0;
 
     for (const product of filtered) {
-      if (!product.propertyId) continue;
+      if (!product.propertyId) {
+        console.warn("[Webhook Warning] Missing propertyId for product:", product);
+        continue;
+      }
 
-      await base44.entities.Property.update(product.propertyId, {
-        eagleview_report_id: requestId,
-        eagleview_report: product,
-        enrichment_status: "complete",
-        last_enrichment_date: new Date().toISOString()
-      });
-
-      processed++;
+      try {
+        // Update property in Base44
+        await base44.entities.Property.update(product.propertyId, {
+          eagleview_report_id: requestId,
+          eagleview_report: product,
+          enrichment_status: "complete",
+          last_enrichment_date: new Date().toISOString()
+        });
+        processedCount++;
+      } catch (err) {
+        console.error(`[Base44 Error] Could not update property ${product.propertyId}:`, err.message);
+      }
     }
 
     return res.status(200).json({
       success: true,
-      processed
+      processed: processedCount
     });
 
   } catch (err) {
-    console.error("[EagleView Webhook Error]", err);
-    return res.status(500).json({
-      error: "Webhook processing failed",
-      message: err.message
-    });
+    console.error("[Webhook Error]", err);
+    return res.status(500).json({ error: err.message });
   }
 }
