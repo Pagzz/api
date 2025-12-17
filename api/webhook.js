@@ -22,6 +22,9 @@ export default async function handler(req, res) {
 
     const body = req.body;
 
+    // Log incoming body for debugging
+    console.log("Received body:", JSON.stringify(body, null, 2));
+
     if (!body || !Array.isArray(body.products)) {
       return res.status(400).json({ error: "Invalid payload" });
     }
@@ -30,6 +33,9 @@ export default async function handler(req, res) {
 
     // Filter only datapacks we want
     const filtered = products.filter(p => SELECTED_DATAPACKS.includes(p.type));
+
+    // Log filtered products
+    console.log("Filtered products:", JSON.stringify(filtered, null, 2));
 
     // Initialize Base44 client
     const base44 = createClient({
@@ -52,6 +58,7 @@ export default async function handler(req, res) {
           enrichment_status: "complete",
           last_enrichment_date: new Date().toISOString()
         });
+        console.log(`[Base44] Successfully updated property ${product.propertyId}`);
         processedCount++;
       } catch (err) {
         console.error(`[Base44 Error] Could not update property ${product.propertyId}:`, err.message);
