@@ -1,54 +1,96 @@
-import { createClient } from '@base44/sdk';
+import { createClient } from "@base44/sdk";
 
-// List of 5 datapacks you want to keep
-const SELECTED_DATAPACKS = ["RoofCondition", "Measurements", "PropertyAttributes", "Structure", "Imagery"];
+const SELECTED_DATAPACKS = [
+  "RoofCondition",
+  "Measurements",
+  "PropertyAttributes",
+  "Structure",
+  "Imagery"
+];
 
 export default async function handler(req, res) {
   try {
+    /* ======================================================
+       HEALTH CHECK (GET)
+       ====================================================== */
+    if (req.method === "GET") {
+      return res.status(200).json({
+        status: "ok",
+        message: "EagleView webhook API is LIVE"
+      });
+    }
+
+    /* ======================================================
+       ONLY ALLOW POST FOR WEBHOOK
+       ====================================================== */
     if (req.method !== "POST") {
       return res.status(405).json({ error: "Method not allowed" });
     }
 
+    /* ======================================================
+       VALIDATE PAYLOAD
+       ====================================================== */
     const body = req.body;
 
-    if (!body || !body.products || !Array.isArray(body.products)) {
-      return res.status(400).json({ error: "Invalid payload" });
+    if (!body || !Array.isArray(body.products)) {
+      return res.status(400).json({
+        error: "Invalid payload structure"
+      });
     }
 
     const { requestId, products } = body;
 
-    // Filter only the 5 selected datapacks
-    const filteredProducts = products.filter(p => SELECTED_DATAPACKS.includes(p.type));
+    /* ======================================================
+       FILTER TO SELECTED DATAPACKS
+       ====================================================== */
+    const filteredProducts = products.filter(p =>
+      SELECTED_DATAPACKS.includes(p.type)
+    );
 
     if (filteredProducts.length === 0) {
-      return res.status(200).json({ success: true, message: "No relevant datapacks in payload" });
+      return res.status(200).json({
+        success: true,
+        message: "No relevant datapacks"
+      });
     }
 
-    // Initialize Base44 client
-    const base44 = createClient({ apiKey: process.env.BASE44_API_KEY });
+    /* ======================================================
+       INIT BASE44 CLIENT
+       ====================================================== */
+    const base44 = createClient({
+      apiKey: process.env.BASE44_API_KEY
+    });
 
-    // Update Base44 entities for each product
+    /* ======================================================
+       UPDATE BASE44
+       ====================================================== */
     for (const product of filteredProducts) {
-      const propertyId = product.propertyId; // adjust to match your EagleView payload structure
-      if (!propertyId) continue;
+      if (!product.propertyId) continue;
 
-      try {
-        await base44.entities.Property.update(propertyId, {
-          eagleview_report_id: requestId,
-          eagleview_report: product,
-          enrichment_status: "complete",
-          last_enrichment_date: new Date().toISOString()
-        });
-        console.log(`[Base44] Updated property ${propertyId} successfully`);
-      } catch (err) {
-        console.error(`[Base44] Failed to update property ${propertyId}:`, err.message);
-      }
+      await base44.entities.Property.update(product.propertyId, {
+        eagleview_report_id: requestId,
+        eagleview_report: product,
+        enrichment_status: "complete",
+        last_enrichment_date: new Date().toISOString()
+      });
+
+      console.log(
+        `[Base44] Updated property ${product.propertyId}`
+      );
     }
 
-    res.status(200).json({ success: true, processed: filteredProducts.length });
+    /* ======================================================
+       DONE
+       ====================================================== */
+    return res.status(200).json({
+      success: true,
+      processed: filteredProducts.length
+    });
 
-  } catch (err) {
-    console.error("[Webhook Error]", err);
-    res.status(500).json({ error: err.message });
+  } catch (error) {
+    console.error("[Webhook Error]", error);
+    return res.status(500).json({
+      error: error.message
+    });
   }
 }
